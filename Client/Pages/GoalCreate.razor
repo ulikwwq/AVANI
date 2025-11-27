@@ -1,4 +1,101 @@
-@page "/create-goal"
+@page "/goal/create"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.GoalService GoalService
+@inject NavigationManager Navigation
+
+<div class="goal-create-page">
+    <h2>Новая цель</h2>
+
+    <div class="card form-card">
+        <label class="field-label">Название цели</label>
+        <input class="text-input" @bind="Title" placeholder="Например: хочу велосипед" />
+
+        <div class="actions">
+            <button class="btn-primary" @onclick="CreateGoalAsync" disabled="@IsCreating">Создать</button>
+            <button class="btn-secondary" @onclick="() => Navigation.NavigateTo('/child')">Отмена</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(StatusMessage))
+        {
+            <div class="status">@StatusMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    private string Title { get; set; } = string.Empty;
+    private bool IsCreating = false;
+    private string StatusMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserService.GetCurrentUser();
+        if (user is null || !UserService.IsChild())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+    }
+
+    private async Task CreateGoalAsync()
+    {
+        StatusMessage = string.Empty;
+        if (string.IsNullOrWhiteSpace(Title))
+        {
+            StatusMessage = "Введите название цели.";
+            return;
+        }
+
+        IsCreating = true;
+        try
+        {
+            // Calculate price using GoalService heuristic AI
+            var price = await GoalService.CalculateGoalPrice(Title);
+
+            var goal = new GoalModel
+            {
+                GoalId = Guid.NewGuid().ToString(),
+                Title = Title.Trim(),
+                PriceCoins = price,
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            // Persist in GoalService and attach to current user
+            await GoalService.CreateGoalAsync(goal);
+
+            var user = await UserService.GetCurrentUser();
+            if (user != null)
+            {
+                user.Goals.Add(goal);
+                await UserService.SetCurrentUser(user);
+            }
+
+            // Navigate back to child dashboard (parent will confirm via DashboardParent)
+            Navigation.NavigateTo("/child");
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "Ошибка при создании цели: " + ex.Message;
+        }
+        finally
+        {
+            IsCreating = false;
+        }
+    }
+}
+
+<style>
+.goal-create-page { max-width:720px; margin:0 auto; padding:16px; }
+.form-card { background:linear-gradient(180deg,#fff,#fbf7ff); padding:18px; border-radius:12px; border:1px solid #eee; }
+.field-label { display:block; font-weight:700; margin-bottom:6px; color:#374151; }
+.text-input { width:100%; padding:12px 14px; border-radius:8px; border:1px solid #e6e6e6; margin-bottom:12px; font-size:1rem; }
+.actions { display:flex; gap:10px; }
+.btn-primary { background:linear-gradient(90deg,#10b981,#059669); color:white; padding:10px 16px; border-radius:8px; border:none; font-weight:700; }
+.btn-secondary { background:transparent; padding:10px 16px; border-radius:8px; border:2px solid #d1d5db; }
+.status { margin-top:10px; color:#6b7280; }
+</style>@page "/create-goal"
 @page "/goal/create"
 @using AVANI.Client.Models
 @inject AVANI.Client.Services.UserService UserService

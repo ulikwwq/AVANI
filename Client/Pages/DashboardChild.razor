@@ -40,154 +40,220 @@
         <h4>Активные цели</h4>
         @if (ActiveGoals == null || !ActiveGoals.Any())
         {
-            <div style="text-align:center; padding:24px; color:#999">
-                <p style="font-size:3em">🎯</p>
-                <p>У вас нет активных целей.</p>
-                <button class="btn-small-outline" @onclick="CreateNewGoal">
-                    Создать первую цель
-                </button>
-            </div>
-        }
-        else
-        {
-            <div class="goals-grid">
-                @foreach (var goal in ActiveGoals)
-                {
-                    <div class="goal-item animated">
-                        <GoalCard Goal="@goal" />
+            @page "/child"
+            @using AVANI.Client.Models
+            @inject AVANI.Client.Services.UserService UserService
+            @inject AVANI.Client.Services.GoalService GoalService
+            @inject AVANI.Client.Services.CoinService CoinService
+            @inject NavigationManager Navigation
+
+            <div class="child-dashboard">
+                <h2>Моя доска</h2>
+
+                <!-- Character & Balance Section -->
+                <div class="card character-section">
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:14px">
+                        <MiniAvatar Gender="@CurrentUser?.Gender" Role="Child" Size="150" />
+                        <div style="text-align:center">
+                            <h3 style="margin:0">@(CurrentUser?.Id ?? "Ребёнок")</h3>
+                            <p style="margin:6px 0; color:#666">Привет! 👋</p>
+                            <div class="balance-wrap">
+                                <CoinBalance Amount="@(CurrentUser?.Coins ?? 0)" AutoLoad="false" />
+                                <div class="coin-progress" style="display:@(ShowCoinProgress ? "block" : "none")">
+                                    <div class="coin-progress-fill"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card actions-section">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+                        <button class="btn-large" @onclick="CreateNewGoal">➕ Поставить новую цель</button>
+                        <button class="btn-large" @onclick="ComparePrices">🛍 Сравнить цены</button>
+                        <button class="btn-large btn-logout" @onclick="Logout">↩ Выход</button>
+                    </div>
+                </div>
+
+                <!-- Active Goals Section -->
+                <div class="card goals-section">
+                    <h4>Активные цели</h4>
+                    @if (ActiveGoals == null || !ActiveGoals.Any())
+                    {
+                        <div class="empty">
+                            <p class="big-emoji">🎯</p>
+                            <p style="color:#666">У вас нет активных целей.</p>
+                            <button class="btn-small-outline" @onclick="CreateNewGoal">Создать первую цель</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="goals-grid">
+                            @foreach (var goal in ActiveGoals)
+                            {
+                                <div class="goal-item">
+                                    <GoalCard Goal="@goal" />
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Progress Overview -->
+                <div class="card progress-section">
+                    <h4>Прогресс</h4>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px">
+                        <div class="stat-box">
+                            <div class="stat-label">Всего целей</div>
+                            <div class="stat-value">@AllGoals.Count</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Выполнено</div>
+                            <div class="stat-value">@CompletedGoals.Count</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Активно</div>
+                            <div class="stat-value">@ActiveGoals.Count</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Мой рейтинг</div>
+                            <div class="stat-value">⭐ @Rating</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @code {
+                private UserModel? CurrentUser;
+                private List<GoalModel> AllGoals = new();
+                private List<GoalModel> ActiveGoals = new();
+                private List<GoalModel> CompletedGoals = new();
+                private int Rating = 0;
+
+                // For coin animation when coins are received
+                private int PreviousCoins = 0;
+                private bool ShowCoinProgress = false;
+                private bool _polling = false;
+                private CancellationTokenSource? _cts;
+
+                protected override async Task OnInitializedAsync()
+                {
+                    CurrentUser = await UserService.GetCurrentUser();
+                    if (CurrentUser is null || !UserService.IsChild())
+                    {
+                        Navigation.NavigateTo("/login");
+                        return;
+                    }
+
+                    await LoadGoalsAsync();
+
+                    PreviousCoins = CurrentUser.Coins;
+
+                    // Start lightweight polling to reflect updates (coins/goals) and trigger animations
+                    _cts = new CancellationTokenSource();
+                    _ = Task.Run(async () =>
+                    {
+                        _polling = true;
+                        while (!_cts.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                await Task.Delay(1400, _cts.Token);
+                                var updatedUser = await UserService.GetCurrentUser();
+                                if (updatedUser != null && updatedUser.Coins != CurrentUser?.Coins)
+                                {
+                                    // Update and trigger coin animation if increased
+                                    var old = CurrentUser?.Coins ?? 0;
+                                    CurrentUser = updatedUser;
+                                    if (CurrentUser.Coins > old)
+                                    {
+                                        TriggerCoinProgress();
+                                    }
+                                    await InvokeAsync(StateHasChanged);
+                                }
+
+                                // Refresh goals in case statuses changed
+                                var goalList = await GoalService.GetGoalsAsync();
+                                AllGoals = goalList.ToList();
+                                ActiveGoals = AllGoals.Where(g => string.Equals(g.Status, "Active", StringComparison.OrdinalIgnoreCase)).ToList();
+                                CompletedGoals = AllGoals.Where(g => string.Equals(g.Status, "Completed", StringComparison.OrdinalIgnoreCase)).ToList();
+                                await InvokeAsync(StateHasChanged);
+                            }
+                            catch (TaskCanceledException) { break; }
+                            catch { /* ignore transient errors for polling */ }
+                        }
+                        _polling = false;
+                    });
+
+                    // Calculate rating
+                    Rating = Math.Min(5, (CurrentUser.Coins / 50) + 1);
                 }
-            </div>
-        }
-    </div>
 
-    <!-- Progress Overview -->
-    <div class="card progress-section">
-        <h4>Прогресс</h4>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px">
-            <div class="stat-box">
-                <div class="stat-label">Всего целей</div>
-                <div class="stat-value">@AllGoals.Count</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Выполнено</div>
-                <div class="stat-value">@CompletedGoals.Count</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Активно</div>
-                <div class="stat-value">@ActiveGoals.Count</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Мой рейтинг</div>
-                <div class="stat-value">⭐ @Rating</div>
-            </div>
-        </div>
-    </div>
-</div>
+                private async Task LoadGoalsAsync()
+                {
+                    var goalList = await GoalService.GetGoalsAsync();
+                    AllGoals = goalList.ToList();
+                    ActiveGoals = AllGoals.Where(g => string.Equals(g.Status, "Active", StringComparison.OrdinalIgnoreCase)).ToList();
+                    CompletedGoals = AllGoals.Where(g => string.Equals(g.Status, "Completed", StringComparison.OrdinalIgnoreCase)).ToList();
+                }
 
-@code {
-    private UserModel? CurrentUser;
-    private List<GoalModel> AllGoals = new();
-    private List<GoalModel> ActiveGoals = new();
-    private List<GoalModel> CompletedGoals = new();
-    private int Rating = 0;
+                private void TriggerCoinProgress()
+                {
+                    if (ShowCoinProgress) return;
+                    ShowCoinProgress = true;
+                    _ = Task.Delay(900).ContinueWith(_ =>
+                    {
+                        ShowCoinProgress = false;
+                        PreviousCoins = CurrentUser?.Coins ?? PreviousCoins;
+                        InvokeAsync(StateHasChanged);
+                    });
+                    InvokeAsync(StateHasChanged);
+                }
 
-    protected override async Task OnInitializedAsync()
-    {
-        CurrentUser = await UserService.GetCurrentUser();
-        if (CurrentUser is null || !UserService.IsChild())
-        {
-            Navigation.NavigateTo("/login");
-            return;
-        }
+                private void CreateNewGoal() => Navigation.NavigateTo("/goal/create");
+                private void ComparePrices() => Navigation.NavigateTo("/shop/compare");
+                private void Logout() => Navigation.NavigateTo("/login");
 
-        // Load all goals
-        var goalList = await GoalService.GetGoalsAsync();
-        AllGoals = goalList.ToList();
+                public void Dispose()
+                {
+                    try { _cts?.Cancel(); } catch { }
+                }
+            }
 
-        // Separate active and completed
-        ActiveGoals = AllGoals.Where(g => string.Equals(g.Status, "Active", StringComparison.OrdinalIgnoreCase)).ToList();
-        CompletedGoals = AllGoals.Where(g => string.Equals(g.Status, "Completed", StringComparison.OrdinalIgnoreCase)).ToList();
+            <style>
+            /* Layout */
+            .child-dashboard { max-width:900px; margin:0 auto; padding:16px; }
+            .character-section { background: linear-gradient(135deg,#fefce8,#fff7ed); border:2px solid #fde68a; padding:20px; margin-bottom:14px; border-radius:12px; }
+            .balance-wrap { position:relative; display:inline-block; }
 
-        // Calculate simple rating (1 star per 50 coins, max 5)
-        Rating = Math.Min(5, (CurrentUser.Coins / 50) + 1);
-    }
+            /* coin progress bar (short celebratory pulse) */
+            .coin-progress { position:absolute; left:50%; transform:translateX(-50%); bottom:-12px; width:220px; height:10px; background:rgba(15,23,42,0.06); border-radius:999px; overflow:hidden; }
+            .coin-progress-fill { width:0%; height:100%; background: linear-gradient(90deg,#60a5fa,#7c3aed); animation: coinFill 0.9s ease-out forwards; }
 
-    private void CreateNewGoal()
-    {
-        Navigation.NavigateTo("/goal/create");
-    }
+            @keyframes coinFill { 0% { width:0%; } 60% { width:100%; } 100% { width:100%; opacity:0.95; } }
 
-    private void ComparePrices()
-    {
-        Navigation.NavigateTo("/shop/compare");
-    }
+            /* Buttons and grids */
+            .btn-large { padding:12px 20px; background:linear-gradient(135deg,#60a5fa,#3b82f6); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:700; }
+            .btn-large.btn-logout { background:linear-gradient(135deg,#ef4444,#dc2626); }
+            .btn-small-outline { padding:8px 14px; border-radius:8px; border:2px solid #3b82f6; background:transparent; color:#3b82f6; font-weight:700; }
 
-    private void Logout()
-    {
-        Navigation.NavigateTo("/login");
-    }
-}
+            .goals-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+            .goal-item { padding:10px; border-radius:10px; background:#ffffff; box-shadow:0 6px 18px rgba(15,23,42,0.04); }
 
-<style>
-.child-dashboard {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 16px;
-}
+            .progress-section { margin-top:8px; background:linear-gradient(135deg,#f3e8ff,#fce7f3); padding:12px; border-radius:10px; }
+            .stat-box { background:white; padding:12px; border-radius:8px; text-align:center; border:1px solid #eef2ff; }
+            .stat-value { font-size:1.6rem; font-weight:800; color:#4f46e5; }
 
-.character-section {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    border: 3px solid #fcd34d;
-    padding: 24px;
-    margin-bottom: 16px;
-    text-align: center;
-    border-radius: 12px;
-}
+            .empty { text-align:center; padding:20px; color:#7c7c7c; }
+            .big-emoji { font-size:3rem; margin:6px 0; }
 
-.actions-section {
-    margin-bottom: 16px;
-    padding: 16px;
-}
-
-.btn-large {
-    padding: 12px 20px;
-    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 1em;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.btn-large:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-}
-
-.btn-large.btn-logout {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.btn-large.btn-logout:hover {
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
-}
-
-.btn-small-outline {
-    padding: 8px 16px;
-    background: transparent;
-    color: #3b82f6;
-    border: 2px solid #3b82f6;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s;
-}
-
-.btn-small-outline:hover {
-    background: #eff6ff;
+            @media (max-width:640px) {
+                .child-dashboard { padding:10px; }
+                .goals-grid { grid-template-columns:1fr; }
+                .btn-large { width:100%; }
+            }
+            </style>
 }
 
 .goals-section {

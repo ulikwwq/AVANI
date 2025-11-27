@@ -3,32 +3,36 @@
 @inject AVANI.Client.Services.GoalService GoalService
 
 <div class="goal-card card">
-    <div style="display:flex; justify-content:space-between; align-items:center">
-        <div>
-            <h5 style="margin:0 0 4px 0">@(Goal?.Title ?? "Unnamed Goal")</h5>
-            <div style="font-size:0.9em; color:#666">
-                💰 @(Goal?.PriceCoins ?? 0) coins — 
-                <span style="font-weight:600">@(Goal?.Status ?? "N/A")</span>
-            </div>
+    <div class="goal-header">
+        <div class="goal-left">
+            <h4 class="goal-title">@Goal?.Title</h4>
+            <div class="goal-info">🪙 <strong>@(Goal?.PriceCoins ?? 0)</strong> — <span class="status-text">@(Goal?.Status ?? "N/A")</span></div>
+        </div>
+        <div class="goal-right">
+            <div class="status-badge">@Goal?.Status</div>
         </div>
     </div>
 
     @if (IsParent)
     {
-        <div style="margin-top:8px; display:flex; gap:6px">
-            <button class="btn-small" @onclick="MarkCompleted">✓ Выполнено</button>
-            <button class="btn-small" @onclick="MarkConfirmed">✓ Подтвердить</button>
+        <div class="parent-actions">
+            <button class="btn-action btn-complete" @onclick="MarkCompleted">Выполнено</button>
+            <button class="btn-action btn-confirm" @onclick="MarkConfirmed">Подтвердить</button>
         </div>
     }
     else
     {
-        <!-- Child view: progress animation -->
-        <div style="margin-top:8px">
-            <div class="progress-bar">
-                <div class="progress-fill" style="width:@ProgressPercent%"></div>
+        <div class="child-view">
+            <div class="progress-wrap">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width:@ProgressPercent%"></div>
+                </div>
+                <div class="progress-label">Прогресс: @ProgressPercent% </div>
             </div>
-            <div style="text-align:center; font-size:0.85em; margin-top:4px">
-                Progress: @ProgressPercent%
+
+            <div class="coin-earn" style="display:@(ShowCoinEarned ? "flex" : "none")">
+                <span class="coin-emoji">🪙</span>
+                <span class="coin-plus">+@EarnedAmount</span>
             </div>
         </div>
     }
@@ -36,27 +40,46 @@
 
 @code {
     [Parameter]
-    public string? GoalId { get; set; }
-
-    [Parameter]
     public GoalModel? Goal { get; set; }
 
     private bool IsParent = false;
     private int ProgressPercent = 0;
 
-    protected override async Task OnInitializedAsync()
+    // Animation when child earns coins
+    private bool ShowCoinEarned = false;
+    private int EarnedAmount = 0;
+    private string? PreviousStatus;
+
+    protected override async Task OnParametersSetAsync()
     {
-        var user = await UserService.GetCurrentUser();
         IsParent = UserService.IsParent();
 
-        // Calculate simple progress for child view (0-100% based on status)
+        // Determine progress based on status
         ProgressPercent = (Goal?.Status) switch
         {
-            "Active" => 50,
+            "Active" => 40,
             "Completed" => 100,
             "Rejected" => 0,
             _ => 0
         };
+
+        // Detect status change to Completed to trigger coin-earned animation for child
+        if (PreviousStatus != null && PreviousStatus != Goal?.Status && Goal?.Status == "Completed")
+        {
+            // Show animation only for child view
+            if (!IsParent)
+            {
+                EarnedAmount = Goal?.PriceCoins ?? 0;
+                ShowCoinEarned = true;
+                _ = Task.Delay(1200).ContinueWith(_ =>
+                {
+                    ShowCoinEarned = false;
+                    InvokeAsync(StateHasChanged);
+                });
+            }
+        }
+
+        PreviousStatus = Goal?.Status;
     }
 
     private async Task MarkCompleted()
@@ -77,33 +100,35 @@
 }
 
 <style>
-.btn-small {
-    padding: 4px 8px;
-    font-size: 0.85em;
-    background: #5b5ef5;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s;
+.goal-card { padding: 12px; border-radius: 10px; background: linear-gradient(180deg,#fff,#f8fafc); border:1px solid #e6edf3; }
+.goal-header { display:flex; justify-content:space-between; align-items:center; }
+.goal-title { margin:0; font-size:1.05rem; color:#0f172a; }
+.goal-info { font-size:0.9rem; color:#475569; }
+.status-badge { background:#f1f5f9; padding:6px 10px; border-radius:999px; font-weight:600; color:#0f172a; }
+
+.parent-actions { margin-top:10px; display:flex; gap:8px; }
+.btn-action { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; }
+.btn-complete { background:linear-gradient(90deg,#10b981,#059669); color:white; }
+.btn-confirm { background:linear-gradient(90deg,#f59e0b,#d97706); color:white; }
+
+.child-view { margin-top:12px; position:relative; }
+.progress-wrap { display:flex; flex-direction:column; gap:6px; }
+.progress-bar { width:100%; height:14px; background:#e6eef8; border-radius:8px; overflow:hidden; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#60a5fa,#7c3aed); width:0%; transition:width 0.6s cubic-bezier(.2,.9,.2,1); }
+.progress-label { font-size:0.85rem; color:#334155; text-align:center; }
+
+.coin-earn { position:absolute; right:12px; top:-20px; background:rgba(255,255,255,0.95); border-radius:999px; padding:6px 10px; align-items:center; gap:8px; box-shadow:0 6px 18px rgba(99,102,241,0.15); animation:coinPop 0.9s ease-out; }
+.coin-emoji { font-size:1.4rem; transform:translateY(0); }
+.coin-plus { font-weight:800; color:#b45309; font-size:1rem; }
+
+@keyframes coinPop {
+    0% { transform: translateY(10px) scale(0.9); opacity:0; }
+    40% { transform: translateY(-6px) scale(1.08); opacity:1; }
+    100% { transform: translateY(0) scale(1); opacity:1; }
 }
 
-.btn-small:hover {
-    background: #4646d0;
-}
-
-.progress-bar {
-    width: 100%;
-    height: 16px;
-    background: #e5e7eb;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #5b5ef5, #a78bfa);
-    border-radius: 4px;
-    transition: width 0.4s ease-in-out;
+@media (max-width:640px) {
+    .goal-title { font-size:1rem; }
+    .coin-earn { right:8px; }
 }
 </style>

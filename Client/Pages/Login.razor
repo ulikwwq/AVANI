@@ -39,7 +39,7 @@
         SuccessMessage = string.Empty;
         IsLoading = true;
 
-        var id = (UserId ?? string.Empty).Trim();
+        var id = (UserId ?? string.Empty).Trim().ToUpperInvariant();
         if (string.IsNullOrEmpty(id) || id.Length < 2)
         {
             ErrorMessage = "Please enter a valid ID (e.g. 1P or 2C).";
@@ -47,14 +47,13 @@
             return;
         }
 
-        // Determine role by last character of ID: 'P' => Parent, 'C' => Child
-        var last = char.ToUpperInvariant(id[^1]);
+        // Role detection by prefix: 1P/2P => Parent, 1C/2C => Child
         string role;
-        if (last == 'P') role = "Parent";
-        else if (last == 'C') role = "Child";
+        if (id.StartsWith("1P") || id.StartsWith("2P")) role = "Parent";
+        else if (id.StartsWith("1C") || id.StartsWith("2C")) role = "Child";
         else
         {
-            ErrorMessage = "Unknown role in ID. Use IDs ending with 'P' (Parent) or 'C' (Child).";
+            ErrorMessage = "Unknown role in ID. Use IDs starting with '1P'/'2P' (Parent) or '1C'/'2C' (Child).";
             IsLoading = false;
             return;
         }
