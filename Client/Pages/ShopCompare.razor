@@ -1,0 +1,391 @@
+@page "/compare"
+@page "/shop/compare"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject NavigationManager Navigation
+
+<div class="shop-compare-container">
+    <h2>Сравнение цен</h2>
+
+    <!-- AI Tip Section -->
+    <div class="card ai-tip-section">
+        <div style="display:flex; gap:12px; align-items:start">
+            <span style="font-size:1.8em">💡</span>
+            <div>
+                <h4 style="margin:0 0 6px 0">Совет от AI</h4>
+                <p style="margin:0; color:#666; line-height:1.6">
+                    "Сравни цены перед покупкой, чтобы избежать импульсивных решений. 
+                    Лучше потратить немного времени на анализ, чем потратить все свои монеты на ненужные вещи! 🤓"
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Current Balance -->
+    <div class="card balance-card">
+        <div style="display:flex; justify-content:space-between; align-items:center">
+            <div>
+                <div style="font-size:0.9em; color:#666">Твой баланс</div>
+                <div style="font-size:1.8em; font-weight:bold; color:#fbbf24">
+                    🪙 @CurrentBalance
+                </div>
+            </div>
+            <div style="text-align:right; font-size:0.9em; color:#999">
+                Заработал монет:
+                <div style="font-weight:bold; color:#333; margin-top:4px">
+                    @(CurrentUser?.Coins ?? 0) из 1000
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Items Grid -->
+    <div class="shop-grid">
+        @if (ShopItems == null || !ShopItems.Any())
+        {
+            <div class="card" style="grid-column:1/-1; text-align:center; padding:40px">
+                <p style="font-size:2em; margin:0">🛒</p>
+                <p style="color:#999">Магазин пока пуст. Скоро здесь появятся товары!</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var item in ShopItems)
+            {
+                <div class="shop-item-card">
+                    <div class="item-header">
+                        <div class="item-icon">@item.IconUrl</div>
+                        <h4 style="margin:0">@item.Name</h4>
+                    </div>
+
+                    <p class="item-description">@item.Description</p>
+
+                    <div class="price-section">
+                        <div class="price-box real-price">
+                            <div class="price-label">Реальная цена</div>
+                            <div class="price-value">@item.Price р.</div>
+                        </div>
+                        <div class="price-box coin-price">
+                            <div class="price-label">Цена в монетах</div>
+                            <div class="price-value">🪙 @CalculateMonetaryValue(item.Price)</div>
+                        </div>
+                    </div>
+
+                    <div class="comparison-info">
+                        <span class="value-ratio">
+                            @GetValueRatio(item.Price) р./монета
+                        </span>
+                    </div>
+
+                    <button 
+                        class="btn-buy" 
+                        disabled="@(CurrentBalance < CalculateMonetaryValue(item.Price))"
+                        @onclick="() => BuyItem(item)">
+                        @(CurrentBalance < CalculateMonetaryValue(item.Price) ? "❌ Недостаточно монет" : "🛒 Купить")
+                    </button>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Back Button -->
+    <div style="text-align:center; margin-top:24px">
+        <button class="btn-back" @onclick="GoBack">
+            ← Вернуться в панель
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <div class="card" style="margin-top:16px; background:#f0f9ff; border-left:4px solid #3b82f6; color:#1e40af; padding:12px 16px">
+            @Message
+        </div>
+    }
+</div>
+
+@code {
+    private UserModel? CurrentUser;
+    private int CurrentBalance = 0;
+    private List<ShopItemModel> ShopItems = new();
+    private string Message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CurrentUser = await UserService.GetCurrentUser();
+        if (CurrentUser is null)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        CurrentBalance = CurrentUser.Coins;
+
+        // Initialize sample shop items
+        ShopItems = new List<ShopItemModel>
+        {
+            new ShopItemModel
+            {
+                Id = 1,
+                Name = "Киндер Сюрприз",
+                Price = 120,
+                IconUrl = "🥚",
+                Description = "Кинетический песок с игрушкой внутри"
+            },
+            new ShopItemModel
+            {
+                Id = 2,
+                Name = "Наклейки 'Животные'",
+                Price = 50,
+                IconUrl = "🦁",
+                Description = "Набор из 50 ярких наклеек"
+            },
+            new ShopItemModel
+            {
+                Id = 3,
+                Name = "Карандаши цветные",
+                Price = 200,
+                IconUrl = "🖍",
+                Description = "Набор из 24 качественных карандашей"
+            },
+            new ShopItemModel
+            {
+                Id = 4,
+                Name = "Резинка 'Фрукты'",
+                Price = 40,
+                IconUrl = "🍓",
+                Description = "Забавная резинка в форме фрукта"
+            },
+            new ShopItemModel
+            {
+                Id = 5,
+                Name = "Прыгающий мячик",
+                Price = 150,
+                IconUrl = "⚽",
+                Description = "Светящийся мячик с интересными отскоками"
+            },
+            new ShopItemModel
+            {
+                Id = 6,
+                Name = "Блокнот с наклейками",
+                Price = 180,
+                IconUrl = "📓",
+                Description = "Красивый блокнот с листом наклеек"
+            }
+        };
+    }
+
+    private int CalculateMonetaryValue(int rubles)
+    {
+        // Simple conversion: 1 coin = 10 rubles (configurable)
+        // Round up to ensure fairness
+        return (int)Math.Ceiling(rubles / 10.0);
+    }
+
+    private string GetValueRatio(int rubles)
+    {
+        // How many rubles per coin
+        return ((double)rubles / CalculateMonetaryValue(rubles)).ToString("F1");
+    }
+
+    private void BuyItem(ShopItemModel item)
+    {
+        int cost = CalculateMonetaryValue(item.Price);
+
+        if (CurrentBalance < cost)
+        {
+            Message = $"❌ Недостаточно монет для покупки '{item.Name}'. Нужно {cost}, а у тебя {CurrentBalance}.";
+            return;
+        }
+
+        CurrentBalance -= cost;
+        CurrentUser!.Coins = CurrentBalance;
+
+        Message = $"✓ Поздравляю! Ты купил '{item.Name}' за {cost} монет! 🎉";
+
+        // Could persist to UserService/Firebase here if needed
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/child");
+    }
+}
+
+<style>
+.shop-compare-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.ai-tip-section {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    border: 2px solid #7dd3fc;
+    padding: 16px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+}
+
+.ai-tip-section h4 {
+    color: #0369a1;
+}
+
+.ai-tip-section p {
+    color: #075985;
+}
+
+.balance-card {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px solid #fcd34d;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.shop-item-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.shop-item-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.item-icon {
+    font-size: 2.5em;
+    line-height: 1;
+}
+
+.shop-item-card h4 {
+    margin: 0;
+    color: #1f2937;
+}
+
+.item-description {
+    font-size: 0.9em;
+    color: #666;
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+.price-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.price-box {
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.real-price {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+}
+
+.coin-price {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+}
+
+.price-label {
+    font-size: 0.8em;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.price-value {
+    font-size: 1.3em;
+    font-weight: bold;
+    color: #1f2937;
+}
+
+.coin-price .price-value {
+    color: #d97706;
+}
+
+.comparison-info {
+    text-align: center;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 0.85em;
+}
+
+.value-ratio {
+    color: #666;
+    font-weight: 500;
+}
+
+.btn-buy {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-buy:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+}
+
+.btn-buy:disabled {
+    background: #d1d5db;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.btn-back {
+    padding: 10px 20px;
+    background: #e5e7eb;
+    color: #333;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-back:hover {
+    background: #d1d5db;
+}
+
+@media (max-width: 640px) {
+    .shop-compare-container {
+        padding: 8px;
+    }
+
+    .shop-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .price-section {
+        grid-template-columns: 1fr;
+    }
+}
+</style>

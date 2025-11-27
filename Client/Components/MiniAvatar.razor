@@ -1,0 +1,45 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="mini-avatar large" style="width:@SizePx; height:@SizePx;">
+    <img src="@ImageSrc" alt="@AltText" />
+</div>
+
+@code {
+    [Parameter]
+    public string? ImageUrl { get; set; }
+
+    // "Male" or "Female"
+    [Parameter]
+    public string? Gender { get; set; }
+
+    // "Parent" or "Child"
+    [Parameter]
+    public string? Role { get; set; }
+
+    // Size in pixels (default 150)
+    [Parameter]
+    public int Size { get; set; } = 150;
+
+    private string SizePx => Size + "px";
+
+    private string ImageSrc => !string.IsNullOrWhiteSpace(ImageUrl)
+        ? ImageUrl!
+        : BuildAvatarPath();
+
+    private string AltText => $"{(Role ?? "user")} avatar";
+
+    private string BuildAvatarPath()
+    {
+        var g = (Gender ?? string.Empty).Trim().ToLowerInvariant();
+        var r = (Role ?? string.Empty).Trim().ToLowerInvariant();
+
+        // Expect filenames like: /img/avatars/parent_male.png or /img/avatars/child_female.png
+        if (!string.IsNullOrEmpty(r) && !string.IsNullOrEmpty(g))
+        {
+            return $"/img/avatars/{r}_{g}.png";
+        }
+
+        // Fallback to a default avatar
+        return "/img/avatars/default.png";
+    }
+}

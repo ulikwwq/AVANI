@@ -1,0 +1,414 @@
+@page "/penalty"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.CoinService CoinService
+@inject NavigationManager Navigation
+
+<div class="penalty-container">
+    <h2>Применить штраф</h2>
+
+    @if (!IsParent)
+    {
+        <div class="card warning-card">
+            <p style="margin:0; color:#991b1b">
+                ⚠ Только родитель может применять штрафы.
+                <button class="btn-link" @onclick="() => Navigation.NavigateTo('/login')">Вернитесь на вход</button>
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="card form-card">
+            <h4>Наложить штраф на ребенка</h4>
+
+            <form @onsubmit="ApplyPenaltyAsync">
+                <!-- Child ID Selection -->
+                <div class="form-group">
+                    <label for="childId">ID Ребенка</label>
+                    <input 
+                        id="childId" 
+                        type="text" 
+                        @bind="ChildId" 
+                        placeholder="например: 1C или 2C"
+                        required 
+                    />
+                </div>
+
+                <!-- Penalty Amount -->
+                <div class="form-group">
+                    <label for="amount">Количество монет для штрафа</label>
+                    <input 
+                        id="amount" 
+                        type="number" 
+                        @bind="PenaltyAmount" 
+                        min="1" 
+                        max="1000"
+                        placeholder="10"
+                        required 
+                    />
+                    <span class="help-text">Минимум: 1, Максимум: 1000 монет</span>
+                </div>
+
+                <!-- Penalty Reason -->
+                <div class="form-group">
+                    <label for="reason">Причина штрафа</label>
+                    <textarea 
+                        id="reason" 
+                        @bind="PenaltyReason" 
+                        placeholder="например: Не выполнил домашнее задание, Забыл про цель..."
+                        maxlength="150"
+                        rows="4"
+                    />
+                    <span class="char-count">@PenaltyReason.Length / 150</span>
+                </div>
+
+                <!-- Preset Reasons -->
+                <div class="form-group">
+                    <label>Частые причины</label>
+                    <div class="preset-buttons">
+                        <button type="button" class="preset-btn" @onclick="() => SelectPreset('Не выполнил домашнее задание')">
+                            📚 Домашнее задание
+                        </button>
+                        <button type="button" class="preset-btn" @onclick="() => SelectPreset('Невежливое поведение')">
+                            😠 Невежливость
+                        </button>
+                        <button type="button" class="preset-btn" @onclick="() => SelectPreset('Не убрал комнату')">
+                            🏠 Беспорядок
+                        </button>
+                        <button type="button" class="preset-btn" @onclick="() => SelectPreset('Поздно лег спать')">
+                            😴 Режим дня
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Error & Success Messages -->
+                @if (!string.IsNullOrEmpty(ErrorMessage))
+                {
+                    <div class="message error-message">
+                        ⚠ @ErrorMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(SuccessMessage))
+                {
+                    <div class="message success-message">
+                        ✓ @SuccessMessage
+                    </div>
+                }
+
+                <!-- Action Buttons -->
+                <div class="button-group">
+                    <button type="submit" class="btn-primary" disabled="@(IsSubmitting || PenaltyAmount <= 0)">
+                        @(IsSubmitting ? "Применяю..." : "⚠ Применить штраф")
+                    </button>
+                    <button type="button" class="btn-secondary" @onclick="GoBack">
+                        ← Назад
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Info Section -->
+        <div class="card info-card">
+            <h4>⚡ Важно помнить</h4>
+            <ul style="margin:0; padding-left:20px; color:#666; line-height:1.8">
+                <li>Штрафы помогают ребенку научиться ответственности</li>
+                <li>Будьте справедливы и последовательны</li>
+                <li>Объясняйте причину штрафа</li>
+                <li>Штрафы записываются в историю монет</li>
+                <li>Используйте награды и поощрения, а не только штрафы</li>
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    private string ChildId = string.Empty;
+    private int PenaltyAmount = 0;
+    private string PenaltyReason = string.Empty;
+    private string ErrorMessage = string.Empty;
+    private string SuccessMessage = string.Empty;
+    private bool IsParent = false;
+    private bool IsSubmitting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserService.GetCurrentUser();
+        IsParent = UserService.IsParent();
+
+        if (!IsParent && user is not null)
+        {
+            // If child is logged in, auto-fill their ID (optional)
+            // or redirect
+        }
+    }
+
+    private async Task ApplyPenaltyAsync()
+    {
+        ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
+        IsSubmitting = true;
+
+        // Validate inputs
+        if (string.IsNullOrWhiteSpace(ChildId))
+        {
+            ErrorMessage = "Пожалуйста, введите ID ребенка.";
+            IsSubmitting = false;
+            return;
+        }
+
+        if (PenaltyAmount <= 0)
+        {
+            ErrorMessage = "Количество штрафных монет должно быть больше 0.";
+            IsSubmitting = false;
+            return;
+        }
+
+        if (PenaltyAmount > 1000)
+        {
+            ErrorMessage = "Штраф не может превышать 1000 монет.";
+            IsSubmitting = false;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PenaltyReason))
+        {
+            ErrorMessage = "Пожалуйста, укажите причину штрафа.";
+            IsSubmitting = false;
+            return;
+        }
+
+        try
+        {
+            // Apply penalty via CoinService
+            var success = await CoinService.PenalizeCoins(ChildId, PenaltyAmount, PenaltyReason);
+
+            if (success)
+            {
+                SuccessMessage = $"✓ Штраф в {PenaltyAmount} монет применен ребенку {ChildId}. Причина: {PenaltyReason}";
+
+                // Clear form
+                ChildId = string.Empty;
+                PenaltyAmount = 0;
+                PenaltyReason = string.Empty;
+
+                // Redirect after delay
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/parent");
+            }
+            else
+            {
+                ErrorMessage = "Ошибка при применении штрафа. Попробуйте позже.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    private void SelectPreset(string reason)
+    {
+        PenaltyReason = reason;
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/parent");
+    }
+}
+
+<style>
+.penalty-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.warning-card {
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: #2563eb;
+    text-decoration: underline;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0;
+    margin-left: 4px;
+}
+
+.btn-link:hover {
+    color: #1d4ed8;
+}
+
+.form-card {
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #333;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1em;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.help-text {
+    display: block;
+    font-size: 0.85em;
+    color: #999;
+    margin-top: 4px;
+}
+
+.char-count {
+    display: block;
+    font-size: 0.85em;
+    color: #999;
+    margin-top: 4px;
+}
+
+.preset-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.preset-btn {
+    padding: 10px;
+    background: #f3f4f6;
+    border: 2px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.preset-btn:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+}
+
+.button-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 24px;
+}
+
+.btn-primary {
+    flex: 1;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1em;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    flex: 1;
+    padding: 12px 16px;
+    background: #e5e7eb;
+    color: #333;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.message {
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
+.error-message {
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    color: #991b1b;
+}
+
+.success-message {
+    background: #dcfce7;
+    border-left: 4px solid #10b981;
+    color: #15803d;
+}
+
+.info-card {
+    background: #fef3c7;
+    border: 2px solid #fcd34d;
+    padding: 16px;
+}
+
+.info-card h4 {
+    margin-top: 0;
+    color: #92400e;
+}
+
+@media (max-width: 640px) {
+    .penalty-container {
+        padding: 8px;
+    }
+
+    .form-card {
+        padding: 16px;
+    }
+
+    .preset-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    .button-group {
+        flex-direction: column;
+    }
+}
+</style>

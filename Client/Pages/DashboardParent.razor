@@ -1,0 +1,292 @@
+@page "/parent"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.GoalService GoalService
+@inject AVANI.Client.Services.CoinService CoinService
+@inject NavigationManager Navigation
+
+<div class="parent-dashboard">
+    <h2>Parent Dashboard</h2>
+
+    <!-- Child Profile Section -->
+    <div class="card child-profile">
+        <div style="display:flex; align-items:center; gap:16px">
+            <MiniAvatar Gender="@CurrentUser?.Gender" Role="Child" Size="120" />
+            <div style="flex:1">
+                <h3 style="margin:0">@(CurrentUser?.Id ?? "Child")</h3>
+                <div style="font-size:0.9em; color:#666; margin:4px 0">Role: Child</div>
+                <CoinBalance Amount="@CurrentUser?.Coins" AutoLoad="false" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="card actions-section">
+        <h4>Actions</h4>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn-action" @onclick="ConfirmGoal">
+                ✓ Подтвердить цель
+            </button>
+            <button class="btn-action btn-danger" @onclick="PenalizeCoins">
+                ⚠ Штрафовать монетами
+            </button>
+            <button class="btn-action" @onclick="() => Navigation.NavigateTo('/login')">
+                ↩ Выход
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(StatusMessage))
+        {
+            <div style="margin-top:8px; padding:8px; background:#f0f9ff; border-left:4px solid #3b82f6; color:#1e40af">
+                @StatusMessage
+            </div>
+        }
+    </div>
+
+    <!-- Goals Section -->
+    <div class="card goals-section">
+        <h4>Цели ребенка</h4>
+        @if (Goals == null || !Goals.Any())
+        {
+            <p style="color:#999">Нет целей.</p>
+        }
+        else
+        {
+            <div class="goals-grid">
+                @foreach (var goal in Goals)
+                {
+                    <div class="goal-item">
+                        <GoalCard Goal="@goal" />
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- Coin History Section -->
+    <div class="card history-section">
+        <h4>История монет</h4>
+        @if (CoinHistory == null || !CoinHistory.Any())
+        {
+            <p style="color:#999">Нет истории.</p>
+        }
+        else
+        {
+            <div class="history-list">
+                @foreach (var entry in CoinHistory.OrderByDescending(x => x.Timestamp))
+                {
+                    <div class="history-item">
+                        <span class="reason">@entry.Reason</span>
+                        <span class="amount" style="color:@(entry.Amount > 0 ? "#10b981" : "#ef4444")">
+                            @(entry.Amount > 0 ? "+" : "")@entry.Amount
+                        </span>
+                        <span class="time">@entry.Timestamp.ToString("yyyy-MM-dd HH:mm")</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private UserModel? CurrentUser;
+    private List<GoalModel> Goals = new();
+    private List<CoinHistoryModel> CoinHistory = new();
+    private string StatusMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CurrentUser = await UserService.GetCurrentUser();
+        if (CurrentUser is null || !UserService.IsParent())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        // Load goals and coin history
+        var goalList = await GoalService.GetGoalsAsync();
+        Goals = goalList.ToList();
+
+        CoinHistory = (await CoinService.GetHistoryAsync()).ToList();
+    }
+
+    private async Task ConfirmGoal()
+    {
+        StatusMessage = string.Empty;
+
+        // Find first Active goal
+        var activeGoal = Goals.FirstOrDefault(g => string.Equals(g.Status, "Active", StringComparison.OrdinalIgnoreCase));
+        if (activeGoal is null)
+        {
+            StatusMessage = "⚠ Нет активных целей для подтверждения.";
+            return;
+        }
+
+        // Mark as Completed
+        await GoalService.UpdateGoalStatusAsync(activeGoal.GoalId, "Completed");
+        activeGoal.Status = "Completed";
+
+        // Award coins to child
+        if (CurrentUser is not null)
+        {
+            CurrentUser.Coins += activeGoal.PriceCoins;
+            await UserService.SetCurrentUser(CurrentUser);
+
+            // Record in history
+            var historyEntry = new CoinHistoryModel
+            {
+                Id = CoinHistory.Count + 1,
+                Amount = activeGoal.PriceCoins,
+                Reason = $"Goal completed: {activeGoal.Title}",
+                Timestamp = DateTime.UtcNow
+            };
+            await CoinService.AddHistoryAsync(historyEntry);
+            CoinHistory.Add(historyEntry);
+        }
+
+        StatusMessage = $"✓ Цель '{activeGoal.Title}' подтверждена! +{activeGoal.PriceCoins} монет.";
+    }
+
+    private async Task PenalizeCoins()
+    {
+        StatusMessage = string.Empty;
+
+        if (CurrentUser is null)
+        {
+            StatusMessage = "⚠ Пользователь не найден.";
+            return;
+        }
+
+        const int penalty = 10;
+        if (CurrentUser.Coins < penalty)
+        {
+            StatusMessage = $"⚠ Недостаточно монет (нужно {penalty}, есть {CurrentUser.Coins}).";
+            return;
+        }
+
+        CurrentUser.Coins -= penalty;
+        await UserService.SetCurrentUser(CurrentUser);
+
+        // Record penalty in history
+        var historyEntry = new CoinHistoryModel
+        {
+            Id = CoinHistory.Count + 1,
+            Amount = -penalty,
+            Reason = "Штраф от родителя",
+            Timestamp = DateTime.UtcNow
+        };
+        await CoinService.AddHistoryAsync(historyEntry);
+        CoinHistory.Add(historyEntry);
+
+        StatusMessage = $"⚠ Штраф -{penalty} монет применен. Баланс: {CurrentUser.Coins}.";
+    }
+}
+
+<style>
+.parent-dashboard {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.child-profile {
+    background: linear-gradient(135deg, #f3e8ff, #fce7f3);
+    border: 2px solid #e9d5ff;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.actions-section {
+    margin-bottom: 16px;
+}
+
+.actions-section h4 {
+    margin-top: 0;
+}
+
+.btn-action {
+    padding: 10px 16px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+
+.btn-action:hover {
+    background: #2563eb;
+}
+
+.btn-action.btn-danger {
+    background: #ef4444;
+}
+
+.btn-action.btn-danger:hover {
+    background: #dc2626;
+}
+
+.goals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 12px;
+}
+
+.goal-item {
+    background: #f9fafb;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.history-list {
+    background: #fafafa;
+    border-radius: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 0.9em;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-item .reason {
+    flex: 1;
+    font-weight: 500;
+}
+
+.history-item .amount {
+    font-weight: bold;
+    min-width: 60px;
+    text-align: right;
+    margin-right: 12px;
+}
+
+.history-item .time {
+    color: #999;
+    font-size: 0.85em;
+}
+
+@media (max-width: 640px) {
+    .parent-dashboard {
+        padding: 8px;
+    }
+
+    .goals-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .btn-action {
+        flex: 1;
+        min-width: 100px;
+    }
+}
+</style>

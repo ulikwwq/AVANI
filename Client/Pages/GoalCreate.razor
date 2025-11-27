@@ -1,0 +1,426 @@
+@page "/create-goal"
+@page "/goal/create"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.GoalService GoalService
+@inject NavigationManager Navigation
+
+<div class="goal-create-container">
+    <h2>Поставить новую цель</h2>
+
+    <div class="card form-card">
+        <form @onsubmit="CreateGoalAsync">
+            <div class="form-group">
+                <label for="title">Название цели</label>
+                <input 
+                    id="title" 
+                    type="text" 
+                    @bind="GoalTitle" 
+                    placeholder="например: Прочитать книгу, Выучить таблицу умножения..."
+                    maxlength="100"
+                    required 
+                />
+                <span class="char-count">@GoalTitle.Length / 100</span>
+            </div>
+
+            <div class="form-group">
+                <label for="description">Описание (необязательно)</label>
+                <textarea 
+                    id="description" 
+                    @bind="GoalDescription" 
+                    placeholder="Расскажи подробнее о своей цели..."
+                    maxlength="200"
+                    rows="4"
+                />
+                <span class="char-count">@GoalDescription.Length / 200</span>
+            </div>
+
+            <!-- AI-Calculated Cost -->
+            <div class="form-group">
+                <label>Расчетная стоимость</label>
+                <div class="cost-box">
+                    @if (IsCalculating)
+                    {
+                        <div style="text-align:center; padding:16px; color:#666">
+                            <span>⏳ Рассчитываю стоимость...</span>
+                        </div>
+                    }
+                    else if (CalculatedPrice > 0)
+                    {
+                        <div style="text-align:center">
+                            <div style="font-size:2em; font-weight:bold; color:#fbbf24">
+                                🪙 @CalculatedPrice монет
+                            </div>
+                            <div style="font-size:0.9em; color:#666; margin-top:8px">
+                                Родитель подтвердит эту цель после одобрения
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="text-align:center; padding:16px; color:#999">
+                            Введите название, чтобы рассчитать стоимость
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Difficulty Level (for better AI estimation) -->
+            <div class="form-group">
+                <label for="difficulty">Сложность</label>
+                <select id="difficulty" @bind="SelectedDifficulty">
+                    <option value="easy">Легко</option>
+                    <option value="medium">Средне</option>
+                    <option value="hard">Сложно</option>
+                </select>
+            </div>
+
+            <!-- Error & Success Messages -->
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="message error-message">
+                    ⚠ @ErrorMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(SuccessMessage))
+            {
+                <div class="message success-message">
+                    ✓ @SuccessMessage
+                </div>
+            }
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button type="submit" class="btn-primary" disabled="@(IsSubmitting || CalculatedPrice == 0)">
+                    @(IsSubmitting ? "Создаю..." : "✓ Создать цель")
+                </button>
+                <button type="button" class="btn-secondary" @onclick="GoBack">
+                    ← Назад
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info Section -->
+    <div class="card info-card">
+        <h4>Как это работает?</h4>
+        <ul style="margin:0; padding-left:20px">
+            <li>Введи название своей цели</li>
+            <li>Система автоматически рассчитает стоимость в монетах</li>
+            <li>Отправь цель на одобрение родителю</li>
+            <li>После подтверждения ты сможешь начать работу над целью!</li>
+        </ul>
+    </div>
+</div>
+
+@code {
+    private string GoalTitle = string.Empty;
+    private string GoalDescription = string.Empty;
+    private string SelectedDifficulty = "medium";
+    private int CalculatedPrice = 0;
+    private bool IsCalculating = false;
+    private bool IsSubmitting = false;
+    private string ErrorMessage = string.Empty;
+    private string SuccessMessage = string.Empty;
+
+    private UserModel? CurrentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CurrentUser = await UserService.GetCurrentUser();
+        if (CurrentUser is null || !UserService.IsChild())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+    }
+
+    private async Task CreateGoalAsync()
+    {
+        ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
+        IsSubmitting = true;
+
+        if (string.IsNullOrWhiteSpace(GoalTitle))
+        {
+            ErrorMessage = "Пожалуйста, введите название цели.";
+            IsSubmitting = false;
+            return;
+        }
+
+        if (CalculatedPrice <= 0)
+        {
+            ErrorMessage = "Не удалось рассчитать стоимость. Попробуйте позже.";
+            IsSubmitting = false;
+            return;
+        }
+
+        try
+        {
+            var newGoal = new GoalModel
+            {
+                GoalId = Guid.NewGuid().ToString(),
+                Title = GoalTitle.Trim(),
+                PriceCoins = CalculatedPrice,
+                Status = "Active", // Pending confirmation by parent
+                CreatedAt = DateTime.UtcNow
+            };
+
+            // Save goal to service
+            await GoalService.CreateGoalAsync(newGoal);
+
+            SuccessMessage = $"✓ Цель '{newGoal.Title}' создана! Ожидает одобрения родителя.";
+
+            // Clear form and redirect after delay
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/child");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    private async Task OnTitleChanged(ChangeEventArgs e)
+    {
+        GoalTitle = e.Value?.ToString() ?? string.Empty;
+        
+        // Trigger AI cost calculation when title changes
+        if (!string.IsNullOrWhiteSpace(GoalTitle) && GoalTitle.Length > 3)
+        {
+            await CalculateCostAsync();
+        }
+        else
+        {
+            CalculatedPrice = 0;
+        }
+    }
+
+    private async Task CalculateCostAsync()
+    {
+        IsCalculating = true;
+
+        try
+        {
+            // Simple AI logic: calculate price based on title length, difficulty, and keywords
+            CalculatedPrice = CalculateGoalPrice(GoalTitle, SelectedDifficulty);
+
+            // Simulate API delay
+            await Task.Delay(300);
+        }
+        catch
+        {
+            CalculatedPrice = 0;
+        }
+        finally
+        {
+            IsCalculating = false;
+        }
+    }
+
+    private int CalculateGoalPrice(string title, string difficulty)
+    {
+        // Base price: 10 coins
+        int basePrice = 10;
+
+        // Adjust by title length (more words = higher complexity)
+        int words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        int lengthBonus = Math.Min(words * 5, 30);
+
+        // Difficulty multiplier
+        float difficultyMultiplier = difficulty switch
+        {
+            "easy" => 0.8f,
+            "hard" => 1.5f,
+            _ => 1f
+        };
+
+        // Keyword detection (examples)
+        float keywordMultiplier = 1f;
+        string lowerTitle = title.ToLower();
+        if (lowerTitle.Contains("выучить") || lowerTitle.Contains("научиться"))
+            keywordMultiplier = 1.3f;
+        if (lowerTitle.Contains("пробежать") || lowerTitle.Contains("спорт"))
+            keywordMultiplier = 1.2f;
+        if (lowerTitle.Contains("прочитать"))
+            keywordMultiplier = 1.1f;
+
+        int finalPrice = (int)((basePrice + lengthBonus) * difficultyMultiplier * keywordMultiplier);
+        return Math.Max(5, Math.Min(finalPrice, 100)); // Clamp between 5 and 100
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/child");
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Recalculate if title or difficulty changes
+        if (!string.IsNullOrWhiteSpace(GoalTitle))
+        {
+            await CalculateCostAsync();
+        }
+    }
+}
+
+<style>
+.goal-create-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.form-card {
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1em;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #5b5ef5;
+    box-shadow: 0 0 0 3px rgba(91, 94, 245, 0.1);
+}
+
+.char-count {
+    display: block;
+    font-size: 0.85em;
+    color: #999;
+    margin-top: 4px;
+}
+
+.cost-box {
+    background: #fefce8;
+    border: 2px solid #fcd34d;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.button-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 24px;
+}
+
+.btn-primary {
+    flex: 1;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #5b5ef5, #4646d0);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1em;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    flex: 1;
+    padding: 12px 16px;
+    background: #e5e7eb;
+    color: #333;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.message {
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
+.error-message {
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    color: #991b1b;
+}
+
+.success-message {
+    background: #dcfce7;
+    border-left: 4px solid #10b981;
+    color: #15803d;
+}
+
+.info-card {
+    background: #f0f9ff;
+    border: 2px solid #bfdbfe;
+    padding: 16px;
+}
+
+.info-card h4 {
+    margin-top: 0;
+    color: #0c4a6e;
+}
+
+.info-card ul {
+    color: #075985;
+    line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+    .goal-create-container {
+        padding: 8px;
+    }
+
+    .form-card {
+        padding: 16px;
+    }
+
+    .button-group {
+        flex-direction: column;
+    }
+}
+</style>

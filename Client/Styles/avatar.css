@@ -1,0 +1,19 @@
+.mini-avatar {
+  display: inline-block;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.mini-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Large variant for the cartoon-style big head */
+.mini-avatar.large {
+  width: 150px;
+  height: 150px;
+}

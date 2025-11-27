@@ -1,0 +1,109 @@
+@page "/login"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.FirebaseService FirebaseService
+@inject NavigationManager Navigation
+
+<h3>Login</h3>
+
+<div class="login-container card">
+    <label for="userId">User ID</label>
+    <input id="userId" @bind="UserId" placeholder="e.g. 1P or 2C" />
+
+    <div style="margin-top:8px">
+        <button class="btn" @onclick="LoginAsync" disabled="@IsLoading">
+            @(IsLoading ? "Загрузка..." : "Войти")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="error" style="color:crimson; margin-top:8px">@ErrorMessage</div>
+    }
+
+    @if (!string.IsNullOrEmpty(SuccessMessage))
+    {
+        <div class="success" style="color:green; margin-top:8px">@SuccessMessage</div>
+    }
+</div>
+
+@code {
+    private string UserId { get; set; } = string.Empty;
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string SuccessMessage { get; set; } = string.Empty;
+    private bool IsLoading = false;
+
+    private async Task LoginAsync()
+    {
+        ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
+        IsLoading = true;
+
+        var id = (UserId ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(id) || id.Length < 2)
+        {
+            ErrorMessage = "Please enter a valid ID (e.g. 1P or 2C).";
+            IsLoading = false;
+            return;
+        }
+
+        // Determine role by last character of ID: 'P' => Parent, 'C' => Child
+        var last = char.ToUpperInvariant(id[^1]);
+        string role;
+        if (last == 'P') role = "Parent";
+        else if (last == 'C') role = "Child";
+        else
+        {
+            ErrorMessage = "Unknown role in ID. Use IDs ending with 'P' (Parent) or 'C' (Child).";
+            IsLoading = false;
+            return;
+        }
+
+        try
+        {
+            // Try to fetch existing user from Firebase
+            var existingUser = await FirebaseService.GetUserById(id);
+
+            UserModel user;
+            if (existingUser is not null)
+            {
+                // User exists
+                user = existingUser;
+                SuccessMessage = $"Welcome back, {user.Id}!";
+            }
+            else
+            {
+                // User doesn't exist; create a new one
+                user = new UserModel
+                {
+                    Id = id,
+                    Role = role,
+                    Gender = "Male", // Default; can be customized later
+                    Coins = 0
+                };
+
+                // Save to Firebase
+                await FirebaseService.SaveUser(user);
+                SuccessMessage = $"New user created: {user.Id}!";
+            }
+
+            // Save to local UserService
+            await UserService.SetCurrentUser(user);
+
+            // Redirect according to role
+            await Task.Delay(500); // Brief delay to show success message
+            if (role == "Parent")
+                Navigation.NavigateTo("/parent");
+            else
+                Navigation.NavigateTo("/child");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error during login: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}

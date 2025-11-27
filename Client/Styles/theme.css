@@ -1,0 +1,10 @@
+/* Simple theme tokens for MVP */
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --accent: #5b5ef5;
+  --muted: #6b7280;
+}
+
+body { background: var(--bg); color: #111827; }
+.card { background: var(--card); border-radius: 8px; padding: 12px; }

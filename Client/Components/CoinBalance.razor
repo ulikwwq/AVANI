@@ -1,0 +1,140 @@
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+
+<div class="coin-balance-wrapper">
+    <div class="coin-balance @AnimationClass">
+        <span class="coin-icon">🪙</span>
+        <span class="amount">@DisplayAmount</span>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int Amount { get; set; } = 0;
+
+    [Parameter]
+    public bool AutoLoad { get; set; } = true;
+
+    private int DisplayAmount = 0;
+    private int PreviousAmount = 0;
+    private string AnimationClass = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AutoLoad)
+        {
+            var user = await UserService.GetCurrentUser();
+            Amount = user?.Coins ?? 0;
+        }
+        DisplayAmount = Amount;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Amount != PreviousAmount)
+        {
+            // Trigger animation based on change direction
+            if (Amount > PreviousAmount)
+            {
+                AnimationClass = "animate-increase";
+            }
+            else if (Amount < PreviousAmount)
+            {
+                AnimationClass = "animate-decrease";
+            }
+
+            PreviousAmount = Amount;
+            DisplayAmount = Amount;
+
+            // Remove animation class after animation completes
+            _ = Task.Delay(500).ContinueWith(_ =>
+            {
+                AnimationClass = string.Empty;
+                StateHasChanged();
+            });
+        }
+    }
+}
+
+<style>
+.coin-balance-wrapper {
+    display: inline-block;
+}
+
+.coin-balance {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: clamp(1rem, 2vw, 1.5rem);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.coin-icon {
+    font-size: clamp(1.2rem, 2.5vw, 2rem);
+    animation: spin 2s linear infinite;
+}
+
+.amount {
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+}
+
+/* Increase animation */
+.coin-balance.animate-increase {
+    animation: pulse-up 0.4s ease-out;
+}
+
+.coin-balance.animate-increase .coin-icon {
+    animation: spin-fast 0.3s ease-out;
+}
+
+/* Decrease animation */
+.coin-balance.animate-decrease {
+    animation: pulse-down 0.4s ease-out;
+}
+
+.coin-balance.animate-decrease .coin-icon {
+    animation: shake 0.3s ease-out;
+}
+
+@keyframes spin {
+    from { transform: rotateZ(0deg); }
+    to { transform: rotateZ(360deg); }
+}
+
+@keyframes spin-fast {
+    from { transform: rotateZ(0deg); }
+    to { transform: rotateZ(360deg); }
+}
+
+@keyframes shake {
+    0%, 100% { transform: rotateZ(0deg); }
+    25% { transform: rotateZ(-5deg); }
+    75% { transform: rotateZ(5deg); }
+}
+
+@keyframes pulse-up {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes pulse-down {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .coin-balance {
+        padding: 10px 16px;
+    }
+}
+</style>

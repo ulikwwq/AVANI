@@ -1,0 +1,379 @@
+@page "/view-goal/{Id:string}"
+@page "/goal/{Id:string}"
+@page "/view-goal"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.GoalService GoalService
+@inject AVANI.Client.Services.UserService UserService
+@inject NavigationManager Navigation
+
+<div class="goal-view-container">
+    @if (Goal is null)
+    {
+        <div class="card loading">
+            <p>⏳ Загружаю цель...</p>
+        </div>
+    }
+    else
+    {
+        <div class="card goal-header">
+            <div style="display:flex; justify-content:space-between; align-items:start">
+                <div>
+                    <h2 style="margin:0 0 12px 0">@Goal.Title</h2>
+                    <div class="goal-meta">
+                        <span class="meta-item">
+                            🪙 <strong>@Goal.PriceCoins</strong> монет
+                        </span>
+                        <span class="meta-item">
+                            📅 @Goal.CreatedAt.ToString("dd.MM.yyyy HH:mm")
+                        </span>
+                    </div>
+                </div>
+                <div class="status-badge" style="background:@GetStatusColor(Goal.Status)">
+                    @Goal.Status
+                </div>
+            </div>
+        </div>
+
+        <!-- Parent Action Buttons -->
+        @if (IsParent && string.Equals(Goal.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="card action-section">
+                <h4>Действия родителя</h4>
+                <div style="display:flex; gap:8px; flex-wrap:wrap">
+                    <button class="btn-confirm" @onclick="ApproveGoal" disabled="@IsProcessing">
+                        ✓ Подтвердить цель
+                    </button>
+                    <button class="btn-reject" @onclick="RejectGoal" disabled="@IsProcessing">
+                        ✗ Отклонить
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(ActionMessage))
+                {
+                    <div style="margin-top:12px; padding:12px; background:#f0f9ff; border-left:4px solid #3b82f6; color:#1e40af; border-radius:6px">
+                        @ActionMessage
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Goal Status Display -->
+        <div class="card status-section">
+            <h4>Статус цели</h4>
+            <div class="status-display">
+                @switch (Goal.Status)
+                {
+                    case "Active":
+                        <div class="status-box status-active">
+                            <span style="font-size:2em">⏳</span>
+                            <div>
+                                <div style="font-weight:bold">Ожидает подтверждения</div>
+                                <div style="font-size:0.9em; color:#666">Родитель должен подтвердить эту цель</div>
+                            </div>
+                        </div>
+                        break;
+                    case "Completed":
+                        <div class="status-box status-completed">
+                            <span style="font-size:2em">✓</span>
+                            <div>
+                                <div style="font-weight:bold">Выполнено</div>
+                                <div style="font-size:0.9em; color:#666">Цель достигнута! Монеты зачислены.</div>
+                            </div>
+                        </div>
+                        break;
+                    case "Rejected":
+                        <div class="status-box status-rejected">
+                            <span style="font-size:2em">✗</span>
+                            <div>
+                                <div style="font-weight:bold">Отклонено</div>
+                                <div style="font-size:0.9em; color:#666">Цель была отклонена родителем</div>
+                            </div>
+                        </div>
+                        break;
+                }
+            </div>
+        </div>
+
+        <!-- Back Button -->
+        <div class="card" style="text-align:center; padding:16px">
+            <button class="btn-secondary" @onclick="GoBack">
+                ← Вернуться назад
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="card error-message">
+                ⚠ @ErrorMessage
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? Id { get; set; }
+
+    private GoalModel? Goal;
+    private bool IsParent = false;
+    private bool IsProcessing = false;
+    private string ActionMessage = string.Empty;
+    private string ErrorMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Id))
+        {
+            ErrorMessage = "Goal ID not provided.";
+            return;
+        }
+
+        // Check if current user is parent
+        var user = await UserService.GetCurrentUser();
+        IsParent = UserService.IsParent();
+
+        // Load the goal (assuming we fetch from a list or service)
+        var allGoals = await GoalService.GetGoalsAsync();
+        Goal = allGoals.FirstOrDefault(g => g.GoalId == Id);
+
+        if (Goal is null)
+        {
+            ErrorMessage = $"Goal with ID '{Id}' not found.";
+        }
+    }
+
+    private async Task ApproveGoal()
+    {
+        if (Goal is null || IsProcessing) return;
+
+        IsProcessing = true;
+        ActionMessage = string.Empty;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            // Update goal status to Completed
+            await GoalService.UpdateGoalStatusAsync(Goal.GoalId, "Completed");
+            Goal.Status = "Completed";
+
+            ActionMessage = $"✓ Цель '{Goal.Title}' подтверждена!";
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/parent");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error approving goal: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
+    }
+
+    private async Task RejectGoal()
+    {
+        if (Goal is null || IsProcessing) return;
+
+        IsProcessing = true;
+        ActionMessage = string.Empty;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            // Update goal status to Rejected
+            await GoalService.UpdateGoalStatusAsync(Goal.GoalId, "Rejected");
+            Goal.Status = "Rejected";
+
+            ActionMessage = $"✗ Цель '{Goal.Title}' отклонена.";
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/parent");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error rejecting goal: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/parent");
+    }
+
+    private string GetStatusColor(string status)
+    {
+        return status switch
+        {
+            "Active" => "#fbbf24",      // Amber
+            "Completed" => "#10b981",   // Green
+            "Rejected" => "#ef4444",    // Red
+            _ => "#d1d5db"              // Gray
+        };
+    }
+}
+
+<style>
+.goal-view-container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.goal-header {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px solid #fcd34d;
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.goal-meta {
+    display: flex;
+    gap: 20px;
+    font-size: 0.95em;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #666;
+}
+
+.status-badge {
+    padding: 8px 16px;
+    border-radius: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.action-section {
+    background: #f0f9ff;
+    border-left: 4px solid #3b82f6;
+    margin-bottom: 16px;
+}
+
+.btn-confirm {
+    padding: 10px 20px;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-confirm:hover:not(:disabled) {
+    background: #059669;
+}
+
+.btn-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-reject {
+    padding: 10px 20px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-reject:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.btn-reject:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    padding: 10px 20px;
+    background: #e5e7eb;
+    color: #333;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.status-section {
+    margin-bottom: 16px;
+}
+
+.status-display {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.status-box {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid;
+}
+
+.status-active {
+    background: #fef3c7;
+    border-left-color: #fbbf24;
+    color: #92400e;
+}
+
+.status-completed {
+    background: #dcfce7;
+    border-left-color: #10b981;
+    color: #15803d;
+}
+
+.status-rejected {
+    background: #fee2e2;
+    border-left-color: #ef4444;
+    color: #991b1b;
+}
+
+.error-message {
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    color: #991b1b;
+    padding: 12px 16px;
+    margin-top: 16px;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+}
+
+@media (max-width: 640px) {
+    .goal-view-container {
+        padding: 8px;
+    }
+
+    .goal-header {
+        padding: 16px;
+    }
+
+    .goal-meta {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+</style>

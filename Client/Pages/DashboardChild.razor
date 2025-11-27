@@ -1,0 +1,290 @@
+@page "/child"
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.GoalService GoalService
+@inject AVANI.Client.Services.CoinService CoinService
+@inject NavigationManager Navigation
+
+<div class="child-dashboard">
+    <h2>My Dashboard</h2>
+
+    <!-- Character & Balance Section -->
+    <div class="card character-section">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:16px">
+            <MiniAvatar Gender="@CurrentUser?.Gender" Role="Child" Size="150" />
+            <div style="text-align:center">
+                <h3 style="margin:0">@(CurrentUser?.Id ?? "Child")</h3>
+                <p style="margin:4px 0; color:#666">Привет! 👋</p>
+                <CoinBalance Amount="@CurrentUser?.Coins" AutoLoad="false" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="card actions-section">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center">
+            <button class="btn-large" @onclick="CreateNewGoal">
+                ➕ Поставить новую цель
+            </button>
+            <button class="btn-large" @onclick="ComparePrices">
+                🛍 Сравнить цены
+            </button>
+            <button class="btn-large btn-logout" @onclick="Logout">
+                ↩ Выход
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Goals Section -->
+    <div class="card goals-section">
+        <h4>Активные цели</h4>
+        @if (ActiveGoals == null || !ActiveGoals.Any())
+        {
+            <div style="text-align:center; padding:24px; color:#999">
+                <p style="font-size:3em">🎯</p>
+                <p>У вас нет активных целей.</p>
+                <button class="btn-small-outline" @onclick="CreateNewGoal">
+                    Создать первую цель
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="goals-grid">
+                @foreach (var goal in ActiveGoals)
+                {
+                    <div class="goal-item animated">
+                        <GoalCard Goal="@goal" />
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- Progress Overview -->
+    <div class="card progress-section">
+        <h4>Прогресс</h4>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px">
+            <div class="stat-box">
+                <div class="stat-label">Всего целей</div>
+                <div class="stat-value">@AllGoals.Count</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Выполнено</div>
+                <div class="stat-value">@CompletedGoals.Count</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Активно</div>
+                <div class="stat-value">@ActiveGoals.Count</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Мой рейтинг</div>
+                <div class="stat-value">⭐ @Rating</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private UserModel? CurrentUser;
+    private List<GoalModel> AllGoals = new();
+    private List<GoalModel> ActiveGoals = new();
+    private List<GoalModel> CompletedGoals = new();
+    private int Rating = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CurrentUser = await UserService.GetCurrentUser();
+        if (CurrentUser is null || !UserService.IsChild())
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        // Load all goals
+        var goalList = await GoalService.GetGoalsAsync();
+        AllGoals = goalList.ToList();
+
+        // Separate active and completed
+        ActiveGoals = AllGoals.Where(g => string.Equals(g.Status, "Active", StringComparison.OrdinalIgnoreCase)).ToList();
+        CompletedGoals = AllGoals.Where(g => string.Equals(g.Status, "Completed", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        // Calculate simple rating (1 star per 50 coins, max 5)
+        Rating = Math.Min(5, (CurrentUser.Coins / 50) + 1);
+    }
+
+    private void CreateNewGoal()
+    {
+        Navigation.NavigateTo("/goal/create");
+    }
+
+    private void ComparePrices()
+    {
+        Navigation.NavigateTo("/shop/compare");
+    }
+
+    private void Logout()
+    {
+        Navigation.NavigateTo("/login");
+    }
+}
+
+<style>
+.child-dashboard {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.character-section {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 3px solid #fcd34d;
+    padding: 24px;
+    margin-bottom: 16px;
+    text-align: center;
+    border-radius: 12px;
+}
+
+.actions-section {
+    margin-bottom: 16px;
+    padding: 16px;
+}
+
+.btn-large {
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1em;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-large:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.btn-large.btn-logout {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.btn-large.btn-logout:hover {
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.btn-small-outline {
+    padding: 8px 16px;
+    background: transparent;
+    color: #3b82f6;
+    border: 2px solid #3b82f6;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+
+.btn-small-outline:hover {
+    background: #eff6ff;
+}
+
+.goals-section {
+    margin-bottom: 16px;
+}
+
+.goals-section h4 {
+    margin-top: 0;
+}
+
+.goals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.goal-item {
+    background: #f0f9ff;
+    padding: 12px;
+    border-radius: 8px;
+    border: 2px solid #bfdbfe;
+}
+
+.goal-item.animated {
+    animation: slideIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.progress-section {
+    background: linear-gradient(135deg, #f3e8ff, #e9d5ff);
+    border: 2px solid #ddd6fe;
+}
+
+.stat-box {
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #e5e7eb;
+}
+
+.stat-label {
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.stat-value {
+    font-size: 1.8em;
+    font-weight: bold;
+    color: #5b5ef5;
+}
+
+@media (max-width: 640px) {
+    .child-dashboard {
+        padding: 8px;
+    }
+
+    .goals-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .btn-large {
+        width: 100%;
+        padding: 14px;
+    }
+
+    .stat-box {
+        padding: 12px;
+    }
+
+    .stat-value {
+        font-size: 1.5em;
+    }
+}
+</style>
+@page "/dashboard/child"
+
+<h3>Child Dashboard</h3>
+
+<div>
+    <MiniAvatar />
+    <CoinBalance />
+    <h4>Goals</h4>
+    <GoalCard />
+</div>
+
+@code {
+    // Child-specific UI and bindings
+}

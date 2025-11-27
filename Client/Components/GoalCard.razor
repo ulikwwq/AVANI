@@ -1,0 +1,109 @@
+@using AVANI.Client.Models
+@inject AVANI.Client.Services.UserService UserService
+@inject AVANI.Client.Services.GoalService GoalService
+
+<div class="goal-card card">
+    <div style="display:flex; justify-content:space-between; align-items:center">
+        <div>
+            <h5 style="margin:0 0 4px 0">@(Goal?.Title ?? "Unnamed Goal")</h5>
+            <div style="font-size:0.9em; color:#666">
+                💰 @(Goal?.PriceCoins ?? 0) coins — 
+                <span style="font-weight:600">@(Goal?.Status ?? "N/A")</span>
+            </div>
+        </div>
+    </div>
+
+    @if (IsParent)
+    {
+        <div style="margin-top:8px; display:flex; gap:6px">
+            <button class="btn-small" @onclick="MarkCompleted">✓ Выполнено</button>
+            <button class="btn-small" @onclick="MarkConfirmed">✓ Подтвердить</button>
+        </div>
+    }
+    else
+    {
+        <!-- Child view: progress animation -->
+        <div style="margin-top:8px">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:@ProgressPercent%"></div>
+            </div>
+            <div style="text-align:center; font-size:0.85em; margin-top:4px">
+                Progress: @ProgressPercent%
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? GoalId { get; set; }
+
+    [Parameter]
+    public GoalModel? Goal { get; set; }
+
+    private bool IsParent = false;
+    private int ProgressPercent = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserService.GetCurrentUser();
+        IsParent = UserService.IsParent();
+
+        // Calculate simple progress for child view (0-100% based on status)
+        ProgressPercent = (Goal?.Status) switch
+        {
+            "Active" => 50,
+            "Completed" => 100,
+            "Rejected" => 0,
+            _ => 0
+        };
+    }
+
+    private async Task MarkCompleted()
+    {
+        if (Goal?.GoalId is null) return;
+        await GoalService.UpdateGoalStatusAsync(Goal.GoalId, "Completed");
+        Goal.Status = "Completed";
+        ProgressPercent = 100;
+    }
+
+    private async Task MarkConfirmed()
+    {
+        if (Goal?.GoalId is null) return;
+        await GoalService.UpdateGoalStatusAsync(Goal.GoalId, "Completed");
+        Goal.Status = "Completed";
+        ProgressPercent = 100;
+    }
+}
+
+<style>
+.btn-small {
+    padding: 4px 8px;
+    font-size: 0.85em;
+    background: #5b5ef5;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-small:hover {
+    background: #4646d0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 16px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #5b5ef5, #a78bfa);
+    border-radius: 4px;
+    transition: width 0.4s ease-in-out;
+}
+</style>
